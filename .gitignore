@@ -38,9 +38,7 @@ meet-debug.png
 app/avatar-portrait.png
 
 # Downloaded models and vendored external runtimes
-third_party/
-metahuman/
-musetalk-renderer/
+third_party/*
 models/
 checkpoints/
 *.onnx

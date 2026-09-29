@@ -8,7 +8,7 @@ ENV PYTHONUNBUFFERED=1 \
     TORCH_HOME=/workspace/MuseTalk/models
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      build-essential curl ffmpeg git libgl1 libglib2.0-0 libgomp1 \
+      build-essential curl ffmpeg git patch libgl1 libglib2.0-0 libgomp1 \
       libsm6 libsndfile1 libxext6 libxrender1 python3.10 python3.10-dev \
       python3-pip python3.10-distutils ca-certificates \
     && rm -rf /var/lib/apt/lists/*
@@ -32,6 +32,9 @@ RUN python -m pip install --no-cache-dir --upgrade \
     && mim install "mmpose==1.1.0"
 
 COPY third_party/MuseTalk /workspace/MuseTalk
+COPY patches/musetalk-static-image-cleanup.patch /tmp/musetalk-static-image-cleanup.patch
+RUN grep -q "save_dir_full = None" scripts/inference.py \
+    || patch -p1 < /tmp/musetalk-static-image-cleanup.patch
 COPY musetalk-renderer/download-models.sh /usr/local/bin/download-musetalk-models
 COPY musetalk-renderer/render.sh /usr/local/bin/render-tenko-avatar
 COPY musetalk-renderer/gpu_prompt_worker.py /opt/tenko/gpu_prompt_worker.py

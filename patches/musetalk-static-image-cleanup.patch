@@ -1,0 +1,13 @@
+diff --git a/scripts/inference.py b/scripts/inference.py
+index 428afb9..1e0040f 100644
+--- a/scripts/inference.py
++++ b/scripts/inference.py
+@@ -119,2 +119,3 @@ def main(args):
+             # Extract frames from source video
++            save_dir_full = None
+             if get_file_type(video_path) == "video":
+@@ -243,2 +244,3 @@ def main(args):
+-            shutil.rmtree(save_dir_full)
++            if save_dir_full and os.path.isdir(save_dir_full):
++                shutil.rmtree(save_dir_full)
+             if not args.saved_coord:

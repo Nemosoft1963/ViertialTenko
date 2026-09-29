@@ -1,114 +1,234 @@
-# 仮想点呼システム
+# VirtualTenko（仮想点呼システム）
 
-Google Meet に参加した運転者を対象に、参加時刻・車番・氏名・点呼質問と回答を記録する Docker アプリです。
+Google Meetへ参加した運転者に対し、車番・氏名・点呼項目を音声で確認し、回答、録音、会社への伝達事項を記録するセルフホスト型システムです。GPU常駐の日本語音声認識、自然会話支援、デジタルヒューマン表示、主系・待機系の協調運用を備えています。
 
-## 起動
+> 本システムは運行管理者の判断を支援するもので、法令上必要な点呼、本人確認、酒気帯び確認を自動的に代替するものではありません。異常回答や認識結果は必ず管理者が確認してください。
+
+## 主な機能
+
+- Google Meet参加者の検出と順次点呼
+- 車番、氏名、Meet参加ID、過去履歴を組み合わせた本人候補照合
+- 日本語Whisperによる音声認識と物流用語補正
+- 固定進行、リアルタイム、GPU、自然会話、3D、Open WebUIモード
+- 会社への伝達事項の整理、復唱、記録
+- 複数参加者を対象者ごとに固定して順番に処理
+- 録音確認UI、14か月保持、月単位削除
+- 日次・月次CSVメール
+- 主系・待機系、NAS同期、ハートビート、実行ノード優先
+- ヘルス監視と監査ログ
+
+詳細な構成と自立運用機能は [SYSTEM_INTRODUCTION.md](SYSTEM_INTRODUCTION.md) を参照してください。
+
+## システム構成
+
+```text
+Google Meet
+  ├─ Meetブラウザ / 仮想カメラ / 仮想マイク
+  ├─ 参加者監視
+  └─ 回答音声
+       ↓
+GPU常駐 Whisper（日本語・物流用語）
+       ↓
+点呼状態機械 ── Open WebUI / Ollama（自然な文面のみ）
+       ↓
+SQLite・録音・管理UI
+       ↓
+NAS共有領域 ⇄ 主系 / 待機系
+```
+
+LLMは点呼の質問順、回答確定、DB更新を直接制御しません。失敗時は決定論的な既存文面へフォールバックします。
+
+## 必要環境
+
+現在のDocker Compose構成はNVIDIA GPUを使用します。
+
+- Windows 11またはDocker Desktopが動作するWindows環境
+- Docker Desktop（WSL2バックエンド）
+- Docker Compose v2
+- NVIDIA GPU、対応ドライバー、Dockerから利用可能なCUDA
+- 主系の目安: RTX 4070 Ti SUPER 16GB
+- 待機系の目安: RTX 4060 Ti 8GB
+- Google Meet用の専用Googleアカウント
+- 主系・待機系運用時は両PCから接続できるNAS共有
+- 初回イメージ取得、Edge TTS、Google Meetを使うためのネットワーク
+
+Open WebUIを使わない基本モードでも、現行ComposeではGPU音声認識サービスが起動します。
+
+## 初期構築
+
+### 1. 取得
+
+```powershell
+git clone --recurse-submodules https://github.com/Nemosoft1963/ViertialTenko.git
+cd ViertialTenko
+Copy-Item .env.example .env
+```
+
+すでに通常の `git clone` を行った場合:
+
+```powershell
+git submodule update --init --recursive
+```
+
+### 2. 環境設定
+
+`.env` を編集します。実際のパスワード、APIキー、NAS認証情報をGitへ登録しないでください。
+
+最低限確認する値:
+
+- `APP_MODE`: `simulation` または `meet`
+- `MEET_URL`: 使用するGoogle Meet URL
+- `ADMIN_TOKEN`: 推測困難なランダム値
+- `CHROME_GUI_PASSWORD`: Meetブラウザ画面用のランダム値
+- `CLUSTER_NODE_ID`: PCごとに一意なID
+- `CLUSTER_NODE_NAME`: 管理画面に表示するPC名
+- `CLUSTER_NODE_PRIORITY`: 主系100、待機系50を目安
+- `NAS_CIFS_USERNAME` / `NAS_CIFS_PASSWORD`: NAS共有の接続情報
+- `LOCAL_LLM_MODEL`: 主系 `qwen3:8b`、8GB待機系 `qwen3:4b`
+- `WHISPER_COMPUTE_TYPE`: 主系 `float16`、8GB待機系 `int8_float16`
+
+PowerShellでランダム値を生成する例:
+
+```powershell
+[guid]::NewGuid().ToString("N")
+```
+
+NASを使わない単体評価では、`docker-compose.yml` の `cluster-shared` ボリュームをローカルボリュームへ変更する必要があります。既定構成はCIFS NASを前提としています。
+
+### 3. 基本サービス起動
 
 ```powershell
 docker compose up -d --build
+docker compose ps
 ```
 
-管理画面: http://localhost:8080
+管理画面:
 
-初回起動時に「標準点呼」シナリオ（免許証、体調確認）が自動作成されます。設定画面で Meet URL、表示名、使用シナリオを登録してください。
+- 管理UI: http://localhost:8080
+- Meet画面プロキシ: http://localhost:3002
+- Meetブラウザ直接画面: http://localhost:3001
+
+初回起動時に標準点呼シナリオが作成されます。管理UIでMeet URL、BOT表示名、使用シナリオ、動作モードを設定してください。
+
+### 4. Open WebUI自然会話モード
+
+```powershell
+docker compose --profile openwebui up -d --build
+docker compose exec ollama ollama pull qwen3:8b
+```
+
+待機系8GBでは最後のモデル名を `qwen3:4b` にします。
+
+Open WebUI: http://localhost:3000
+
+初回管理者を作成し、APIキー機能から専用キーを発行して `.env` の `OPENWEBUI_API_KEY` に設定します。キーや管理者パスワードをソース、共有資料、スクリーンショットへ記録しないでください。
+
+詳細: [OPENWEBUI_NATURAL_DIALOGUE.md](OPENWEBUI_NATURAL_DIALOGUE.md)
+
+## 主系・待機系
+
+二台は同じソース構成を使い、PC固有値だけを `.env` で分けます。
+
+| 項目 | 主系 | 待機系 |
+|---|---|---|
+| `CLUSTER_NODE_ID` | `primary-pc` | `backup-pc` |
+| `CLUSTER_NODE_PRIORITY` | `100` | `50` |
+| GPU例 | 4070 Ti SUPER 16GB | 4060 Ti 8GB |
+| LLM | `qwen3:8b` | `qwen3:4b` |
+| Whisper計算型 | `float16` | `int8_float16` |
+
+現在点呼を実行しているノードを主系として扱い、設定された優先ノードは待機時の選択に利用します。NAS共有領域を介して車番・氏名、点呼シナリオ、設定、点呼結果を同期します。モデルと推論キャッシュは各PCのローカルDockerボリュームへ保存してください。
+
+- 構築手順: [CLUSTER_SETUP.md](CLUSTER_SETUP.md)
+- 2台目引継ぎ: [SECOND_PC_HANDOFF.md](SECOND_PC_HANDOFF.md)
+- 同期監査: [STANDBY_SYNC_AUDIT_CHANGE_INSTRUCTION.md](STANDBY_SYNC_AUDIT_CHANGE_INSTRUCTION.md)
 
 ## 動作モード
 
-- `simulation`（初期値）: 管理画面から参加者を入力し、点呼・記録を一通り確認できます。
-- `meet`: Playwright ワーカーが Google Meet の会議室を監視します。Google アカウント認証、Meet の入室許可、マイク/スピーカー用の仮想オーディオ設定が必要です。
+管理UIから切り替えます。
 
-## 点呼BOTのアニメーション
+- `legacy`: 固定タイムライン
+- `realtime`: 回答認識後に次の質問を生成
+- `realtime_gpu`: GPU映像推論
+- `realtime_natural`: 氏名呼びかけと自然会話
+- `realtime_3d`: 軽量3D人物
+- `realtime_metahuman`: 外部MetaHuman連携用の実験モード
+- `realtime_openwebui`: ローカルLLMによる自然化
 
-仮想カメラ映像は、点呼音声から事前生成します。BOT画像に次の動きを加えます。
+関連資料:
 
-- 音声波形に同期した口の開閉
-- 自然なまばたき
-- 背景を動かさない控えめな口元・まばたきの動作
-- 回答待ち中の待機動作
+- [REALTIME_DIALOGUE.md](REALTIME_DIALOGUE.md)
+- [NATURAL_DIALOGUE.md](NATURAL_DIALOGUE.md)
+- [DIGITAL_HUMAN_3D.md](DIGITAL_HUMAN_3D.md)
+- [GPU_REALTIME.md](GPU_REALTIME.md)
 
-シナリオ音声を再生成すると、リップシンク映像も同時に再生成されます。
+## 録音とデータ保持
 
-```powershell
-docker compose exec -T app python -m app.build_meet_scenario_audio
-```
+録音は管理UIから確認できます。既定方針は14か月保持し、削除は月単位で実施します。録音、SQLite DB、DockerボリュームはGit管理対象外です。
 
-生成映像は `512x288 / 15fps` の Y4M ファイルとして Meet の仮想カメラへ渡されます。参加者を検出してMeetページを再接続すると、音声と映像が同時に先頭から開始します。
+詳細: [RECORDINGS.md](RECORDINGS.md)
 
+## MuseTalk 1.5
 
-## MuseTalk 1.5 AIリップシンク
-
-描画式より自然な口元にする場合は、GPU対応のMuseTalkレンダラーをオンデマンドで使用します。モデルと生成物はDockerボリュームに保存され、通常の `docker compose up` ではGPUサービスを起動しません。
-
-初回のみ、レンダラーの構築と公式モデルの取得を実行します。
+より自然な口元を生成する任意機能です。モデルと生成物はDockerボリュームに保存します。
 
 ```powershell
 docker compose --profile render build musetalk-renderer
 docker compose --profile render run --rm musetalk-renderer /usr/local/bin/download-musetalk-models
-```
-
-点呼音声からAIリップシンク映像を生成します。
-
-```powershell
 docker compose --profile render run --rm musetalk-renderer /usr/local/bin/render-tenko-avatar
 ```
 
-入力は `/data/idle-base.mp4` を優先し、存在しない場合は `/data/virtual-checkin-operator.png` の静止画を使用します。自然な頭部・姿勢の動きも使う場合は、正面を向いた無音の待機動画を登録してから再生成します。
-
-```powershell
-docker compose cp .\idle-base.mp4 app:/data/idle-base.mp4
-docker compose --profile render run --rm musetalk-renderer /usr/local/bin/render-tenko-avatar
-```
-
-本システムは運行管理者の判断を支援するもので、法令上必要な点呼や本人確認を自動的に代替するものではありません。異常回答は必ず管理者が確認してください。
+モデルライセンス、肖像権、生成物の利用条件を導入者側で確認してください。
 
 ## API
 
 - `GET /api/health`
+- `GET /api/health-monitor`
+- `GET /api/cluster`
 - `GET/POST /api/scenarios`
 - `POST /api/checkins/start`
 - `POST /api/checkins/{id}/answer`
 - `POST /api/checkins/{id}/complete`
 - `GET /api/checkins`
+- `GET /api/worker-status`
 
-## Meet 運用上の注意
+## テスト
 
-Google Meet には一般的な「参加者を自動操作する公式Bot API」はありません。そのため Meet 参加部分はブラウザ自動操作で、Google 側の画面変更や組織ポリシーの影響を受けます。まず simulation で業務フローを確定し、専用Googleアカウントとテスト会議室で `meet` モードを検証してください。
+```powershell
+python -m pip install -r requirements.txt pytest
+python -m pytest -q
+```
 
-## 参加者退出時の処理
+Meetの実地テストにはGoogleログイン、BOT入室許可、別端末の参加者が必要です。
 
-Google MeetでBOT以外の参加者が0人になった状態を5秒間継続して検知すると、進行中の点呼を自動的に中断します。
+## 停止
 
-## 本人・車両確認
+```powershell
+docker compose down
+```
 
-参加者を検出すると、通常の点呼質問より前に次の順番で音声確認します。
+この操作では名前付きDockerボリュームは削除されません。`docker compose down -v` はDB、モデル、ブラウザ状態などを削除するため、バックアップなしで実行しないでください。
 
-1. 車番
-2. 氏名（フルネーム）
+## セキュリティと公開時の注意
 
+- `.env`、録音、DB、Dockerボリューム、Googleプロファイルをコミットしない
+- 管理UIをインターネットへ直接公開しない
+- NAS認証情報をソースやComposeファイルへ直書きしない
+- Open WebUIとMeetブラウザのポートは原則localhostまたは信頼できるLAN内に限定する
+- 録音と点呼結果は個人情報としてアクセス制御、保存期間、削除記録を管理する
+- 公開前に `git status` とシークレットスキャンを実施する
 
-## 日次・月次点呼CSVメール
+脆弱性や認証情報の誤公開を発見した場合は、公開Issueへ秘密情報を書かず、リポジトリ所有者へ非公開経路で連絡してください。
 
-管理画面の「日次・月次CSVメール」で次を設定できます。
+## 既知の制約
 
-- SMTPサーバ、ポート、ログインユーザー、パスワード
-- 送信元・送信先メールアドレス
-- 毎日1:00（日本時間）の自動送信
-- 毎月1日2:00（日本時間）の前月分自動送信
-- 日付を指定した手動送信
-- 月を指定した月次CSVの手動送信
+- Google Meetに一般用途の参加者自動操作APIはなく、ブラウザ画面変更や組織ポリシーの影響を受けます。
+- 音声認識は環境音、マイク、話し方、通信品質で変動します。
+- GPUメモリ不足時はLLMよりWhisperを優先してください。
+- MetaHumanとLiveKitは検討・試験資料を含みますが、標準運用には含まれません。
+- Windowsホスト監視コードは保存されていますが、自動タスクは既定で登録されません。
+- MuseTalkは公式リポジトリをGitサブモジュールとして固定し、静止画入力用の小さな互換パッチをDockerビルド時に適用します。
 
-CSVには点呼日時、車番、氏名、シナリオ、状態、質問、回答、判定を出力します。
-自動送信は前日の0:00から23:59までに開始した点呼を対象とし、同じ対象日の
-二重送信を防止します。月次送信は前月1日0:00から当月1日0:00直前までに
-開始した点呼を1ファイルへまとめ、同じ対象月の二重送信を防止します。
-パスワードは管理画面へ再表示されず、パスワード欄を
-空欄のまま保存すると現在の値を維持します。
+## ライセンス
 
-日次・月次送信ワーカーはDocker Composeの `report-mailer` サービスとして常時稼働します。
-車番と氏名を記録した後、免許証・体調確認など選択中のシナリオを開始します。各回答の標準待ち時間は5秒です。
-
-- 点呼状態を `cancelled`、要確認を有効、完了時刻を退出検知時刻として記録
-- 回答・イベント履歴へ「参加者退出」と退出理由を記録
-- 参加者監視と回答ワーカーを `waiting_for_participant` へリセット
-- 退出後の音声を中断済み点呼へ追加しない
-- 次の新規参加者を通常どおり受付
+本リポジトリ独自コードの利用許諾条件は現時点で明示されていません。第三者ライブラリ、モデル、音声、画像にはそれぞれのライセンスが適用されます。利用・再配布前に権利者の条件を確認してください。
