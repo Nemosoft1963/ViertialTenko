@@ -19,6 +19,14 @@ Google Meetへ参加した運転者に対し、車番・氏名・点呼項目を
 
 詳細な構成と自立運用機能は [SYSTEM_INTRODUCTION.md](SYSTEM_INTRODUCTION.md) を参照してください。
 
+運用前に確認する資料:
+
+- [本番導入チェックリスト](docs/DEPLOYMENT_CHECKLIST.md)
+- [データとプライバシー](docs/DATA_AND_PRIVACY.md)
+- [セキュリティポリシー](SECURITY.md)
+- [開発参加手順](CONTRIBUTING.md)
+- [変更履歴](CHANGELOG.md)
+
 ## システム構成
 
 ```text
@@ -232,3 +240,5 @@ docker compose down
 ## ライセンス
 
 本リポジトリ独自コードの利用許諾条件は現時点で明示されていません。第三者ライブラリ、モデル、音声、画像にはそれぞれのライセンスが適用されます。利用・再配布前に権利者の条件を確認してください。
+
+公開ライセンスを設定する場合は、著作権者が利用、改変、再配布、商用利用、保証、特許条項を確認したうえで別途 `LICENSE` を追加してください。
