@@ -1,0 +1,13 @@
+FROM lscr.io/linuxserver/chrome:latest
+RUN chmod 755 /defaults/startwm_wayland.sh
+COPY --chmod=755 meet-browser-init/10-fix-startwm-permissions /custom-cont-init.d/10-fix-startwm-permissions
+RUN python3 -m pip install --no-cache-dir --break-system-packages playwright==1.52.0
+RUN /lsiopy/bin/python3 -m pip install --no-cache-dir edge-tts==7.2.3
+COPY app/meet_participant_worker_v2.py /opt/tenko/meet_participant_worker.py
+COPY app/realtime_dialogue.py app/realtime_browser.py app/participant_queue.py /opt/tenko/
+COPY app/three.min.js app/avatar3d.js app/THREE-LICENSE.txt /opt/tenko/
+COPY app/avatar-portrait.png /opt/tenko/
+COPY app/metahuman_bridge.py app/metahuman.js /opt/tenko/
+COPY meet-browser-services/meet-audio-recorder /custom-services.d/meet-audio-recorder
+COPY meet-browser-services/meet-participant-watcher /custom-services.d/meet-participant-watcher
+RUN chmod 755 /custom-services.d/meet-audio-recorder /custom-services.d/meet-participant-watcher

@@ -1,0 +1,6 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+# The upstream image may regenerate this script when the container starts,
+# which can discard the permission set at image-build time.
+chmod 755 /defaults/startwm_wayland.sh

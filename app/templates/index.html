@@ -1,0 +1,46 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>仮想点呼</title><style>
+body{margin:0;font-family:system-ui,sans-serif;background:#f4f7f8;color:#172126}header{background:#123b46;color:white;padding:18px 5vw}main{max-width:1100px;margin:24px auto;padding:0 18px}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:18px}.card{background:white;border-radius:12px;padding:20px;box-shadow:0 2px 12px #0001}label{display:block;margin:10px 0 4px;font-weight:600}input,select,textarea{width:100%;box-sizing:border-box;padding:9px;border:1px solid #b9c5c9;border-radius:7px}button{margin-top:12px;background:#087f5b;color:white;border:0;border-radius:7px;padding:10px 16px;font-weight:700}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:10px;border-bottom:1px solid #dde4e6}.alert{color:#b42318;font-weight:bold}.pill{background:#d7eee7;padding:3px 8px;border-radius:99px;font-size:12px}a{color:#087f5b}</style></head><body>
+<header><h1>仮想点呼システム</h1><p><a href="/voice" style="color:white;font-weight:bold">▶ 音声点呼を開始</a></p><span class="pill">{{ mode }}</span> <span class="pill">{{ 'Open WebUI自然会話' if settings.get('operation_mode') == 'realtime_openwebui' else 'MetaHuman（保留）' if settings.get('operation_mode') == 'realtime_metahuman' else '3Dデジタルヒューマン' if settings.get('operation_mode') == 'realtime_3d' else '自然会話点呼' if settings.get('operation_mode','legacy') == 'realtime_natural' else ('GPU高品質リアルタイム' if settings.get('operation_mode','legacy') == 'realtime_gpu' else ('リアルタイム対話' if settings.get('operation_mode','legacy') == 'realtime' else '従来動作')) }}</span></header><main><p><a href="/cluster-control" style="font-weight:bold">冗長化制御</a>　<a href="/health-monitor" style="font-weight:bold">システム監視・ログ</a>　<a href="/driver-identities" style="font-weight:bold">🚚 車番・氏名マスターを管理</a></p><div class="grid">
+<section class="card"><h2>Meet設定</h2><p><a href="/avatar-3d" target="_blank">3D人物のプレビュー</a>（960×540・30fps目標）</p><form action="/settings" method="post"><label>Google Meet URL</label><input name="meet_url" value="{{ settings.get('meet_url','') }}" placeholder="https://meet.google.com/..."><label>Bot表示名</label><input name="bot_display_name" value="{{ settings.get('bot_display_name','仮想点呼') }}"><label>Meet上のBOTアカウント名</label><input name="meet_bot_account_name" value="{{ settings.get('meet_bot_account_name','') }}" placeholder="例：関東ロジ管理"><small>この名前の参加通知はBOT自身として除外します。</small><label>動作モード</label><select name="operation_mode"><option value="realtime_openwebui" {% if settings.get('operation_mode') == 'realtime_openwebui' %}selected{% endif %}>Open WebUI自然会話（ローカルLLM・物流用語）</option><option value="realtime_3d" {% if settings.get('operation_mode') == 'realtime_3d' %}selected{% endif %}>3Dデジタルヒューマン（軽量・自然会話）</option><option value="legacy" {% if settings.get('operation_mode','legacy') == 'legacy' %}selected{% endif %}>従来モード（固定タイムライン）</option><option value="realtime" {% if settings.get('operation_mode','legacy') == 'realtime' %}selected{% endif %}>リアルタイム対話モード</option><option value="realtime_gpu" {% if settings.get('operation_mode','legacy') == 'realtime_gpu' %}selected{% endif %}>GPU高品質リアルタイム（MuseTalk 1.5）</option><option value="realtime_natural" {% if settings.get('operation_mode','legacy') == 'realtime_natural' %}selected{% endif %}>自然会話点呼（履歴氏名・挨拶・会社伝言）</option></select><small>Open WebUIモードでは点呼進行を既存ロジックが管理し、ローカルLLMは発話を自然に整える処理だけを担当します。接続失敗時は既存文面で継続します。</small><label>使用シナリオ</label><select name="active_scenario_id">{% for s in scenarios %}<option value="{{s.id}}" {% if settings.get('active_scenario_id','1')|int==s.id %}selected{% endif %}>{{s.name}}</option>{% endfor %}</select><button>保存</button></form><p><small>Open WebUI接続：<span id="openwebui-status">確認中…</span></small></p><script>fetch('/api/openwebui/status').then(r=>r.json()).then(s=>document.getElementById('openwebui-status').textContent=(s.ready?'接続済み':'未接続')+' / '+s.model+' / '+s.detail).catch(()=>document.getElementById('openwebui-status').textContent='確認失敗')</script></section>
+<section class="card"><h2>日次・月次CSVメール</h2>
+{% if report_message %}<p class="{% if '失敗' in report_message or '不正' in report_message %}alert{% endif %}">{{ report_message }}</p>{% endif %}
+<form action="/report-settings" method="post">
+<label>SMTPサーバ</label>
+<input name="smtp_host" value="{{ settings.get('smtp_host','smtp.lolipop.jp') }}" required>
+<label>SMTPポート</label>
+<input name="smtp_port" type="number" min="1" max="65535" value="{{ settings.get('smtp_port','465') }}" required>
+<label>SMTPログインユーザー</label>
+<input name="smtp_user" type="email" value="{{ settings.get('smtp_user','') }}" required>
+<label>SMTPパスワード</label>
+<input name="smtp_password" type="password" autocomplete="new-password" placeholder="{{ '設定済み（変更時のみ入力）' if settings.get('smtp_password') else 'パスワードを入力' }}">
+<label>送信元メールアドレス</label>
+<input name="smtp_sender" type="email" value="{{ settings.get('smtp_sender','') }}" required>
+<label>送信先メールアドレス</label>
+<input name="report_recipient" type="email" value="{{ settings.get('report_recipient','') }}" required>
+<label><input name="daily_report_enabled" type="checkbox" value="1" style="width:auto" {% if settings.get('daily_report_enabled') == '1' %}checked{% endif %}> 毎日1:00に前日分を自動送信</label>
+<label><input name="monthly_report_enabled" type="checkbox" value="1" style="width:auto" {% if settings.get('monthly_report_enabled') == '1' %}checked{% endif %}> 毎月1日2:00に前月分を自動送信</label>
+<button>メール設定を保存</button>
+</form>
+<hr style="margin:20px 0;border:0;border-top:1px solid #dde4e6">
+<form action="/reports/send" method="post">
+<label>手動送信する対象日</label>
+<input name="report_date" type="date" value="{{ previous_report_date }}" required>
+<button>CSVを作成して今すぐ送信</button>
+</form>
+<hr style="margin:20px 0;border:0;border-top:1px solid #dde4e6">
+<form action="/reports/send-monthly" method="post">
+<label>手動送信する対象月</label>
+<input name="report_month" type="month" value="{{ previous_report_month }}" required>
+<button>月次CSVを作成して今すぐ送信</button>
+</form>
+<p><small>自動送信状態：{{ settings.get('report_worker_status','未起動') }}<br>
+{{ settings.get('report_worker_detail','') }}<br>
+最終日次送信日：{{ settings.get('daily_report_last_sent_date','なし') }}<br>
+最終月次送信月：{{ settings.get('monthly_report_last_sent_month','なし') }}<br>
+録音保持：14か月 ／ 最終月次削除：{{ settings.get('recording_cleanup_last_at','未実行') }}（{{ settings.get('recording_cleanup_last_deleted','0') }}件）</small></p>
+</section>
+<section class="card"><h2>シミュレーション</h2><form action="/simulate" method="post"><label>車番</label><input name="participant_id" required><label>氏名</label><input name="participant_name"><label>シナリオ</label><select name="scenario_id">{% for s in scenarios %}<option value="{{s.id}}">{{s.name}}</option>{% endfor %}</select><button>点呼開始</button></form></section>
+<section class="card"><h2>シナリオ登録</h2><form action="/scenarios" method="post"><label>名称</label><input name="name" required><label>質問（1行1問）</label><textarea name="questions" rows="5" required></textarea><button>登録</button></form></section></div>
+<section class="card" style="margin-top:18px"><h2>点呼記録</h2><table><thead><tr><th>開始</th><th>車番 / 氏名</th><th>シナリオ</th><th>回答</th><th>録音</th><th>状態</th></tr></thead><tbody>{% for r in rows %}<tr><td>{{r.joined_at}}</td><td><a href="/checkins/{{r.id}}">{{r.participant_id}}</a><br>{{r.participant_name or ''}}</td><td>{{r.scenario_name}}</td><td>{{r.answer_count}}</td><td><a href="/checkins/{{r.id}}">{{r.recording_count}}件</a></td><td class="{% if r.alert %}alert{% endif %}">{{'要確認' if r.alert else r.status}}</td></tr>{% else %}<tr><td colspan="6">まだ記録はありません</td></tr>{% endfor %}</tbody></table></section></main><div id="worker-card" style="position:fixed;right:18px;bottom:18px;background:#123b46;color:white;padding:12px 16px;border-radius:10px;box-shadow:0 3px 15px #0003;max-width:330px"><b>Meetワーカー</b><div id="worker-status" style="margin-top:4px">確認中…</div><small id="worker-detail"></small><div><small>対話音声：{{ settings.get('realtime_prompt_state','待機') }}</small></div><div><small>GPU映像：{{ settings.get('gpu_pipeline_state','standby') }}{% if settings.get('gpu_pipeline_state') == 'error' and settings.get('gpu_pipeline_error') %} ／ {{ settings.get('gpu_pipeline_error') }}{% endif %}</small></div></div><script>
+async function refreshWorker(){try{const r=await fetch('/api/worker-status');const d=await r.json();const names={standby:'待機中',starting:'起動中',connecting:'接続中',waiting_admission:'入室許可待ち',connected:'監視中',configuration_required:'設定が必要',attention_required:'確認が必要',error:'エラー',unknown:'未確認'};document.getElementById('worker-status').textContent=names[d.status]||d.status;document.getElementById('worker-detail').textContent=d.detail||'';}catch(e){document.getElementById('worker-status').textContent='取得エラー';}}refreshWorker();setInterval(refreshWorker,10000);
+</script></body></html>

@@ -1,0 +1,58 @@
+.env.local
+__pycache__/
+*.pyc
+*.db
+.pytest_cache/
+.env
+
+# Runtime secrets and local overrides
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+*.p12
+
+# Operational data and browser state
+docker-volumes-backup/
+.docker-volume-backup-current
+cluster-shared/
+.incoming/
+recordings/
+meet-profile/
+meet-browser-config/
+*.sqlite
+*.sqlite3
+*.db-*
+
+# Audio/video captured during operation or testing
+*.wav
+*.mp3
+*.m4a
+*.flac
+*.ogg
+*.webm
+*.mp4
+*.y4m
+meet-debug.png
+app/avatar-portrait.png
+
+# Downloaded models and vendored external runtimes
+third_party/
+metahuman/
+musetalk-renderer/
+models/
+checkpoints/
+*.onnx
+*.safetensors
+*.ckpt
+*.pth
+*.pt
+
+# Tool/editor/cache files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+.coverage
+htmlcov/

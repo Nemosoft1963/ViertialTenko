@@ -1,0 +1,233 @@
+services:
+  app:
+    build: .
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8080
+    env_file: [.env]
+    environment:
+      DATABASE_PATH: /data/tenko.db
+      CLUSTER_SHARED_DIR: /cluster-shared
+    ports: ["8080:8080"]
+    volumes:
+      - tenko-data:/data
+      - cluster-shared:/cluster-shared
+      - meet-browser-config:/meet-config
+    restart: unless-stopped
+
+  meet-bot:
+    build: .
+    command: python -m app.meet_worker
+    env_file: [.env]
+    environment:
+      DATABASE_PATH: /data/tenko.db
+      APP_BASE_URL: http://app:8080
+    volumes:
+      - tenko-data:/data
+      - meet-profile:/profile
+    depends_on: [app]
+    healthcheck:
+      disable: true
+    profiles: ["legacy"]
+    restart: unless-stopped
+
+  response-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.response-gpu
+    command: python -m app.meet_response_worker_v2
+    env_file: [.env]
+    environment:
+      DATABASE_PATH: /data/tenko.db
+      CLUSTER_ENABLED: "1"
+      MEET_OUTPUT_PATH: /meet-config/meet-output.raw
+      WHISPER_MODEL_DIR: /data/whisper-models
+      WHISPER_MODEL_SIZE: small
+      WHISPER_DEVICE: cuda
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-float16}
+      OPENWEBUI_BASE_URL: http://open-webui:8080
+      OPENWEBUI_API_KEY: ${OPENWEBUI_API_KEY:-}
+      OPENWEBUI_MODEL: ${LOCAL_LLM_MODEL:-qwen3:8b}
+      OPENWEBUI_TIMEOUT_SECONDS: "1.8"
+      VAD_BLOCK_MS: "100"
+      VAD_SPEECH_RMS: "350"
+      VAD_MAX_SPEECH_MS: "8000"
+      INPUT_RESPONSE_TIMEOUT_SECONDS: "12"
+      PROMPT_ECHO_GUARD_SECONDS: "1.5"
+    volumes:
+      - tenko-data:/data
+      - meet-browser-config:/meet-config
+    depends_on: [app, meet-browser]
+    healthcheck:
+      disable: true
+    gpus: all
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama:${OLLAMA_IMAGE_TAG:-latest}
+    environment:
+      OLLAMA_KEEP_ALIVE: "-1"
+      OLLAMA_NUM_PARALLEL: "1"
+    volumes:
+      - ollama-models:/root/.ollama
+    gpus: all
+    profiles: ["openwebui"]
+    restart: unless-stopped
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:${OPENWEBUI_IMAGE_TAG:-main}
+    environment:
+      OLLAMA_BASE_URL: http://ollama:11434
+      ENABLE_SIGNUP: "false"
+      ENABLE_API_KEYS: "true"
+      WHISPER_LANGUAGE: ja
+    volumes:
+      - open-webui-data:/app/backend/data
+    ports:
+      - "127.0.0.1:3000:8080"
+    depends_on: [ollama]
+    profiles: ["openwebui"]
+    restart: unless-stopped
+
+  cluster-coordinator:
+    build: .
+    command: python -m app.cluster_coordinator
+    env_file: [.env]
+    environment:
+      DATABASE_PATH: /data/tenko.db
+      CLUSTER_SHARED_DIR: /cluster-shared
+      CLUSTER_NODE_ID: ${CLUSTER_NODE_ID:-primary-pc}
+      CLUSTER_NODE_NAME: ${CLUSTER_NODE_NAME:-Primary PC}
+      CLUSTER_NODE_PRIORITY: ${CLUSTER_NODE_PRIORITY:-100}
+      CLUSTER_INTERVAL_SECONDS: "5"
+      CLUSTER_STALE_SECONDS: "45"
+    volumes:
+      - tenko-data:/data
+      - cluster-shared:/cluster-shared
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+  health-monitor:
+    build: .
+    command: python -m app.health_monitor
+    env_file: [.env]
+    environment:
+      DATABASE_PATH: /data/tenko.db
+      APP_HEALTH_URL: http://app:8080/api/health
+      MEET_OUTPUT_PATH: /meet-config/meet-output.raw
+      HEALTH_LOG_DIR: /data/health-logs
+      HEALTH_MONITOR_INTERVAL_SECONDS: "30"
+      HEALTH_LOG_RETENTION_DAYS: "90"
+      CLUSTER_SHARED_DIR: /cluster-shared
+      CLUSTER_NODE_ID: ${CLUSTER_NODE_ID:-primary-pc}
+    volumes:
+      - tenko-data:/data
+      - meet-browser-config:/meet-config:ro
+      - cluster-shared:/cluster-shared
+    depends_on: [app, meet-browser]
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+  report-mailer:
+    build: .
+    command: python -m app.daily_report_worker
+    env_file: [.env]
+    environment:
+      DATABASE_PATH: /data/tenko.db
+      TZ: Asia/Tokyo
+      REPORT_POLL_SECONDS: "30"
+    volumes:
+      - tenko-data:/data
+    depends_on: [app]
+    healthcheck:
+      disable: true
+    restart: unless-stopped
+
+  meet-browser:
+    build:
+      context: .
+      dockerfile: Dockerfile.chrome
+    image: viertialtenko-meet-browser
+    environment:
+      CLUSTER_ENABLED: "1"
+      PUID: "1000"
+      PGID: "1000"
+      TZ: Asia/Tokyo
+      TITLE: 莉ｮ諠ｳ轤ｹ蜻ｼ Meet繝悶Λ繧ｦ繧ｶ
+      CUSTOM_USER: tenko
+      PASSWORD: ${CHROME_GUI_PASSWORD}
+      CHROME_CLI: --use-fake-ui-for-media-stream --use-fake-device-for-media-stream --use-file-for-fake-video-capture=/config/virtual-camera.y4m --use-file-for-fake-audio-capture=/config/virtual-mic.wav%noloop --remote-debugging-address=127.0.0.1 --remote-debugging-port=9222 --user-data-dir=/config/chrome-cdp-profile --disable-features=WebRtcAllowInputVolumeAdjustment --hide-crash-restore-bubble --disable-session-crashed-bubble https://meet.google.com/
+    volumes:
+      - meet-browser-config:/config
+      - meet-browser-config:/meet-config
+      - tenko-data:/data
+    ports:
+      - "127.0.0.1:3001:3001"
+    shm_size: "1gb"
+    restart: unless-stopped
+
+  meet-browser-proxy:
+    build:
+      context: .
+      dockerfile: Dockerfile.meet-proxy
+    image: viertialtenko-meet-browser-proxy
+    depends_on: [meet-browser]
+    ports:
+      - "127.0.0.1:3002:8080"
+    restart: unless-stopped
+
+  gpu-avatar-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.musetalk
+    image: viertialtenko-musetalk-renderer
+    command: python /opt/tenko/gpu_prompt_worker.py
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      PYTHONUNBUFFERED: "1"
+      DATABASE_PATH: /data/tenko.db
+      GPU_PROMPT_DIR: /meet-config/gpu-prompts
+      REALTIME_TTS_VOICE: ${REALTIME_TTS_VOICE:-ja-JP-NanamiNeural}
+    volumes:
+      - musetalk-models:/workspace/MuseTalk/models
+      - tenko-data:/data
+      - meet-browser-config:/meet-config
+    shm_size: "4gb"
+    gpus: all
+    restart: unless-stopped
+
+  musetalk-renderer:
+    build:
+      context: .
+      dockerfile: Dockerfile.musetalk
+    image: viertialtenko-musetalk-renderer
+    environment:
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - musetalk-models:/workspace/MuseTalk/models
+      - tenko-data:/data
+      - meet-browser-config:/meet-config
+    shm_size: "4gb"
+    gpus: all
+    profiles: ["render"]
+
+volumes:
+  tenko-data:
+  meet-profile:
+  meet-browser-config:
+  cluster-shared:
+    driver: local
+    driver_opts:
+      type: cifs
+      o: "addr=192.168.11.198,username=${NAS_CIFS_USERNAME},password=${NAS_CIFS_PASSWORD},prefixpath=AI_Automater/ViertialTenko/cluster-shared,file_mode=0660,dir_mode=0770"
+      device: "//192.168.11.198/nemosoft"
+  musetalk-models:
+  ollama-models:
+  open-webui-data:
+
+
+
+
+
+

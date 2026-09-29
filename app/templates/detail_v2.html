@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>点呼詳細</title>
+<style>
+body{font-family:system-ui;background:#f4f7f8;max-width:850px;margin:30px auto;padding:0 18px;color:#172126}
+.card{background:white;padding:22px;border-radius:12px;margin:15px 0}
+.question{font-size:1.35rem;font-weight:700;padding:18px;background:#e8f5f0;border-left:5px solid #087f5b}
+.actions{display:flex;gap:12px}.answer-button{flex:1;padding:16px;font-size:1.1rem}
+.yes{background:#087f5b}.no{background:#b42318}
+button{margin-top:12px;padding:10px;background:#087f5b;color:white;border:0;border-radius:7px;padding:10px 16px;font-weight:700}
+table{width:100%;border-collapse:collapse}td,th{padding:9px;border-bottom:1px solid #ddd;text-align:left}.recording{padding:12px 0;border-bottom:1px solid #ddd}.recording audio{width:100%;margin-top:7px}.muted{color:#607078;font-size:.9rem}
+.bad{color:#b42318;font-weight:bold}a{color:#087f5b}
+</style>
+</head>
+<body>
+<a href="/">← 一覧へ戻る</a>
+{% set status_names = {'completed':'完了','cancelled':'退出（点呼中断）','awaiting_id':'車番確認待ち','awaiting_name':'氏名確認待ち','in_progress':'点呼中','awaiting_company_message':'会社への伝言待ち','awaiting_company_message_confirmation':'会社への伝言確認待ち'} %}
+<div class="card">
+<h1>点呼 #{{item.id}}</h1>
+<p>車番：{{item.participant_id}} ／ 氏名：{{item.participant_name or '確認待ち'}}</p>
+<p>開始：{{item.joined_at}} ／ 状態：{{status_names.get(item.status,item.status)}}
+{% if item.alert %}<b class="bad">要確認</b>{% endif %}</p>
+<p>記録 {{answers|length}} 件</p>
+</div>
+{% if company_message %}
+<div class="card">
+<h2>会社への伝言</h2>
+<p><b>整理内容：</b>{{company_message.summary_text}}</p>
+<p class="muted">原文：{{company_message.original_text}}</p>
+<p class="{% if company_message.category == 'urgent' %}bad{% endif %}">区分：{{'要確認' if company_message.category == 'urgent' else ('特になし' if company_message.category == 'none' else '通常')}}</p>
+</div>
+{% endif %}<div class="card">
+<h2>録音音声</h2>
+<p class="muted">録音は14か月保持し、期限を過ぎた月のデータは毎月自動削除されます。</p>
+{% for r in recordings %}
+<div class="recording">
+<div><b>{{r.recorded_at}}</b> ／ {{'%.1f'|format(r.duration_seconds)}}秒 ／ {{(r.file_size / 1024)|round(1)}}KB</div>
+{% if r.transcript %}<div class="muted">文字起こし：{{r.transcript}}</div>{% endif %}
+<audio controls preload="none" src="/recordings/{{r.id}}">このブラウザは音声再生に対応していません。</audio>
+</div>
+{% else %}
+<p>録音音声はまだありません。</p>
+{% endfor %}
+</div>
+{% if item.status in ['awaiting_id','awaiting_name','in_progress','awaiting_company_message','awaiting_company_message_confirmation'] and next_question %}
+<div class="card">
+<h2>次の質問</h2>
+<div class="question">{{next_question.text}}</div>
+<form action="/checkins/{{item.id}}/form-answer" method="post">
+<input type="hidden" name="question_key" value="{{next_question.key}}">
+<input type="hidden" name="question_text" value="{{next_question.text}}">
+<div class="actions">
+<button class="answer-button yes" name="answer_text" value="はい">はい</button>
+<button class="answer-button no" name="answer_text" value="いいえ">いいえ</button>
+</div>
+</form>
+</div>
+{% elif item.status in ['awaiting_id','awaiting_name','in_progress','awaiting_company_message','awaiting_company_message_confirmation'] %}
+<div class="card">
+<h2>すべての質問が完了しました</h2>
+<form action="/checkins/{{item.id}}/form-complete" method="post"><button>点呼を完了する</button></form>
+</div>
+{% endif %}
+<div class="card">
+<h2>回答・イベント記録</h2>
+<table>
+<tr><th>質問・イベント</th><th>内容</th><th>判定</th><th>時刻</th></tr>
+{% for a in answers %}
+<tr>
+<td>{{a.question_text}}</td><td>{{a.answer_text}}</td>
+<td class="{% if a.is_ok==0 %}bad{% endif %}">{{'正常' if a.is_ok else '要確認'}}</td>
+<td>{{a.answered_at}}</td>
+</tr>
+{% else %}
+<tr><td colspan="4">回答はまだありません</td></tr>
+{% endfor %}
+</table>
+</div>
+</body>
+</html>

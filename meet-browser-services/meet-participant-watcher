@@ -1,0 +1,33 @@
+#!/usr/bin/with-contenv bash
+set -e
+
+attempts=0
+until curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1; do
+  attempts=$((attempts + 1))
+  if [ "$attempts" -eq 10 ] && ! pgrep -x chrome >/dev/null 2>&1; then
+    rm -f \
+      /config/chrome-cdp-profile/SingletonLock \
+      /config/chrome-cdp-profile/SingletonSocket \
+      /config/chrome-cdp-profile/SingletonCookie
+    s6-setuidgid abc env \
+      HOME=/config \
+      XDG_RUNTIME_DIR=/config/.XDG \
+      WAYLAND_DISPLAY=wayland-1 \
+      /usr/bin/google-chrome \
+      --no-first-run \
+      --no-sandbox \
+      --password-store=basic \
+      --start-maximized \
+      --test-type \
+      --ozone-platform=wayland \
+      ${CHROME_CLI} \
+      >>/config/tenko-chrome.log 2>&1 &
+  fi
+  sleep 1
+done
+
+export DATABASE_PATH=/data/tenko.db
+export MEET_CDP_URL=http://127.0.0.1:9222
+exec /lsiopy/bin/python3 /opt/tenko/meet_participant_worker.py
+
+

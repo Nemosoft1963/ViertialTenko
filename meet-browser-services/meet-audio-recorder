@@ -1,0 +1,15 @@
+#!/usr/bin/with-contenv bash
+set -e
+until pactl info >/dev/null 2>&1; do
+  mkdir -p /defaults
+  chown abc:abc /defaults
+  sleep 1
+done
+(while true; do chown abc:abc /defaults; sleep 2; done) &
+rm -f /config/meet-output.raw
+exec parec --device=output.monitor --format=s16le --rate=16000 --channels=1 --file-format=raw /config/meet-output.raw
+
+
+
+
+

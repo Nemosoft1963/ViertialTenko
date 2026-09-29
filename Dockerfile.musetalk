@@ -1,0 +1,40 @@
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PYTHONUNBUFFERED=1 \
+    PIP_DEFAULT_TIMEOUT=1000 \
+    PYTHONPATH=/workspace/MuseTalk \
+    MPLCONFIGDIR=/tmp/matplotlib \
+    TORCH_HOME=/workspace/MuseTalk/models
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      build-essential curl ffmpeg git libgl1 libglib2.0-0 libgomp1 \
+      libsm6 libsndfile1 libxext6 libxrender1 python3.10 python3.10-dev \
+      python3-pip python3.10-distutils ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN ln -sf /usr/bin/python3.10 /usr/local/bin/python \
+    && ln -sf /usr/bin/python3.10 /usr/local/bin/python3
+
+WORKDIR /workspace/MuseTalk
+COPY third_party/MuseTalk/requirements.txt /tmp/musetalk-requirements.txt
+
+RUN python -m pip install --no-cache-dir --upgrade \
+      pip==24.0 setuptools==69.5.1 wheel==0.43.0 \
+    && python -m pip install --no-cache-dir \
+      torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 \
+      --index-url https://download.pytorch.org/whl/cu118 \
+    && python -m pip install --no-cache-dir -r /tmp/musetalk-requirements.txt \
+    && python -m pip install --no-cache-dir openmim==0.3.9 edge-tts==7.2.3 \
+    && mim install "mmengine==0.10.7" \
+    && mim install "mmcv==2.0.1" \
+    && mim install "mmdet==3.1.0" \
+    && mim install "mmpose==1.1.0"
+
+COPY third_party/MuseTalk /workspace/MuseTalk
+COPY musetalk-renderer/download-models.sh /usr/local/bin/download-musetalk-models
+COPY musetalk-renderer/render.sh /usr/local/bin/render-tenko-avatar
+COPY musetalk-renderer/gpu_prompt_worker.py /opt/tenko/gpu_prompt_worker.py
+RUN sed -i 's/\r$//' /usr/local/bin/download-musetalk-models /usr/local/bin/render-tenko-avatar \
+    && chmod 755 /usr/local/bin/download-musetalk-models /usr/local/bin/render-tenko-avatar
+

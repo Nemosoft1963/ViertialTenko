@@ -1,0 +1,11 @@
+.git
+**/.git
+**/__pycache__
+**/*.pyc
+assets/*.wav
+assets/*.y4m
+third_party/MuseTalk/models
+third_party/MuseTalk/results
+third_party/MuseTalk/.gradio
+*.db
+.env
